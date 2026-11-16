@@ -6,7 +6,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "MPMapDef.h"
-#include <array>
+#include <memory>
+#include <vector>
 
 #define MAX_BLOCK_SECTION 512
 #define MAX_BLOCK_RANGE 1024
@@ -65,7 +66,7 @@ public:
 class ZRBlock
 {
 public:
-	ZRBlock() = default;
+	ZRBlock();
 	~ZRBlock() = default;
 	BOOL                Load(const char *pszMapName, BOOL bEdit);
 	void				GetBlockByRange(int CenterX, int CenterY, int range); //动态读入一定范围的Block信息
@@ -85,7 +86,7 @@ public:
 	BYTE                m_btBlockBuffer[MAX_BLOCK_RANGE][MAX_BLOCK_RANGE] = {};
 	short				m_sTileRegionAttr[MAX_BLOCK_SECTION][MAX_BLOCK_SECTION] = {};
 private:
-	std::array<std::array<std::unique_ptr<ZRBlockSection>, MAX_BLOCK_SECTION>, MAX_BLOCK_SECTION> m_BlockSectionArray{};
+	std::vector<std::unique_ptr<ZRBlockSection>> m_BlockSectionArray;
 
 	std::unique_ptr<ZRBlockData>        m_pDefaultBlock = std::make_unique<ZRBlockData>();     //默认的block数据
 	std::fstream fs;

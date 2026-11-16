@@ -170,101 +170,6 @@ public:
 };
 
 
-class MINDPOWER_API CEffPath
-{
-public:
-	CEffPath(){	
-		//m_vecPath = NULL;
-		//m_vecDist = NULL;
-		//m_vecDir = NULL;
-		m_fVel = 1.f;m_iCurFrame = 0;m_fCurDist = 0;
-		m_bEnd = false;
-	}
-	~CEffPath(){		
-	//	SAFE_DELETE_ARRAY(m_vecPath);
-	//SAFE_DELETE_ARRAY(m_vecDist);
-	//SAFE_DELETE_ARRAY(m_vecDir);
-	}
-	void	Copy(CEffPath* pPath)
-	{
-		m_iFrameCount = pPath->m_iFrameCount;
-		//m_vecPath = new D3DXVECTOR3[m_iFrameCount];
-		//m_vecDist = new float[m_iFrameCount-1];
-		//m_vecDir = new D3DXVECTOR3[m_iFrameCount-1];
-		memcpy(m_vecPath,pPath->m_vecPath,sizeof(D3DXVECTOR3) * m_iFrameCount);
-		memcpy(m_vecDist,pPath->m_vecDist,sizeof(float) * (m_iFrameCount-1));
-		memcpy(m_vecDir,pPath->m_vecDir,sizeof(D3DXVECTOR3) * (m_iFrameCount-1));
-		m_fVel = pPath->m_fVel;
-		Reset();
-	}
-
-	void				Reset()		{ m_iCurFrame = 0;m_vCurPos = m_vecPath[0];m_fCurDist = 0;}
-	void				SetVel(float fvel)	{ m_fVel = fvel;}
-	float				GetVel()			{ return m_fVel;}
-
-	bool				LoadPathFromFile(char* pszName);
-    bool                LoadPathFromFileLet(const char* file);
-	void				SavePath(FILE* pf);
-	void				LoadPath(FILE* pf);
-
-	void				LoadPathFromMemory(CMemoryBuf*	pbuf);
-
-
-	void				FrameMove(float fDailTime)
-	{
-		if(m_iFrameCount<=0)
-			return;
-		m_bEnd = false;
-
-		float fvel = m_fVel * fDailTime;
-		m_fCurDist += fvel;
-		while (m_fCurDist >= m_vecDist[m_iCurFrame])
-		{
-			m_fCurDist -= m_vecDist[m_iCurFrame];
-			m_iCurFrame++;
-			if(m_iCurFrame >= m_iFrameCount-1)
-			{
-				m_iCurFrame = 0;
-				m_bEnd = true;
-			}
-		}
-		m_vCurPos = m_vecPath[m_iCurFrame] + (m_vecDir[m_iCurFrame] * m_fCurDist);
-	}
-	D3DXVECTOR3*		GetCurPos()			{ return &m_vCurPos;}
-	D3DXVECTOR3*		GetNextPos()		
-	{ 
-		if(m_iCurFrame >= m_iFrameCount - 1)
-			return &m_vCurPos;
-		return &m_vecPath[m_iCurFrame - 1];
-	}
-
-
-	D3DXVECTOR3*		GetCurDir()			{ return &m_vecDir[m_iCurFrame];}
-	float				GetCurDist()		{ return m_vecDist[m_iCurFrame];}
-
-	D3DXVECTOR3*		GetStart()			{ return &m_vecPath[0];}
-	D3DXVECTOR3*		GetEnd()			{ return &m_vecPath[m_iFrameCount - 1];}
-
-	bool				IsEnd()				{ return m_bEnd; }
-
-public:
-	//D3DXVECTOR3*				m_vecPath;
-	//float*						m_vecDist;
-	//D3DXVECTOR3*			    m_vecDir;
-	bool					m_bEnd;
-
-	D3DXVECTOR3				m_vecPath[200];
-	float					m_vecDist[200];
-	D3DXVECTOR3			    m_vecDir[200];
-
-	int							m_iFrameCount;
-	float						m_fVel;
-
-	int							m_iCurFrame;
-	float						m_fCurDist;
-	D3DXVECTOR3					m_vCurPos;
-};
-
 class CEffPathCtrl
 {
 public:
@@ -301,32 +206,6 @@ public:
 };
 
 
-class	EffParameter
-{
-public:
-	EffParameter()
-	{
-		m_bUsePath = false;
-		m_szPathName = "";
-		m_bUseSound = false;
-		m_szSoundName =  "";
-		m_iIdxTech = 0;
-		m_bRotating = false;
-		m_fRotaVel = 1;
-		m_SVerRota = D3DXVECTOR3(0,0,0);
-	}
-	~EffParameter(){}
-
-	bool	m_bUsePath;
-	s_string	m_szPathName;
-	bool	m_bUseSound;
-	s_string	m_szSoundName;
-	int		m_iIdxTech;
-		
-	bool	m_bRotating;
-	float	m_fRotaVel;
-	D3DXVECTOR3	m_SVerRota;
-};
 
 class  MINDPOWER_API  CMPModelEff// : public CEffectBase
 {

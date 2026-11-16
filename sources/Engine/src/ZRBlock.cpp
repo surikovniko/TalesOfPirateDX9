@@ -3,6 +3,11 @@
 #include <filesystem>
 #include <fstream>
 
+ZRBlock::ZRBlock()
+	: m_BlockSectionArray(static_cast<size_t>(MAX_BLOCK_SECTION) * MAX_BLOCK_SECTION)
+{
+}
+
 BOOL ZRBlock::Load(const char* pszMapName, BOOL bEdit)
 {
 	if (fs.is_open()) {
@@ -133,7 +138,7 @@ void ZRBlock::GetBlockByRange(int CenterX, int CenterY, int range)
 
 std::unique_ptr<ZRBlockSection>& ZRBlock::GetBlockSection(int nSectionX, int nSectionY)
 {
-	return m_BlockSectionArray[nSectionX][nSectionY];
+	return m_BlockSectionArray[static_cast<size_t>(nSectionX) * MAX_BLOCK_SECTION + nSectionY];
 }
 
 std::unique_ptr<ZRBlockSection>& ZRBlock::LoadBlockData(int nSectionX, int nSectionY)
@@ -143,9 +148,10 @@ std::unique_ptr<ZRBlockSection>& ZRBlock::LoadBlockData(int nSectionX, int nSect
 	block->nY = nSectionY;
 	
     _LoadBlockData(*block);
-	m_BlockSectionArray[nSectionX][nSectionY] = std::move(block);
+	auto& slot = m_BlockSectionArray[static_cast<size_t>(nSectionX) * MAX_BLOCK_SECTION + nSectionY];
+	slot = std::move(block);
 
-	return m_BlockSectionArray[nSectionX][nSectionY];
+	return slot;
 }
 
 
