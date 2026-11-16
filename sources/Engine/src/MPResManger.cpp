@@ -1837,6 +1837,28 @@ bool	CMPResManger::LoadTotalVShader(lwISysGraphics* sys_graphics)
 	};
 
 
+#if defined(LW_USE_VS30)
+	const char* shader_file[] =
+	{
+		"eff1.hlsl",
+		"eff2.hlsl",
+		"eff3.hlsl",
+		"eff4.hlsl",
+		"font.hlsl",
+		"shadeeff.hlsl",
+		"minimap.hlsl",
+	};
+	const DWORD file_flag[] =
+	{
+		VS_FILE_HLSL,
+		VS_FILE_HLSL,
+		VS_FILE_HLSL,
+		VS_FILE_HLSL,
+		VS_FILE_HLSL,
+		VS_FILE_HLSL,
+		VS_FILE_HLSL,
+	};
+#else
 	const char* shader_file[] = 
 	{
 		"eff1.vsh",
@@ -1847,6 +1869,7 @@ bool	CMPResManger::LoadTotalVShader(lwISysGraphics* sys_graphics)
 		"shadeeff.vsh",
 		"minimap.vsh",
 	};
+#endif
 
 	D3DVERTEXELEMENT9* decl_tab[] =
 	{
@@ -1891,7 +1914,12 @@ bool	CMPResManger::LoadTotalVShader(lwISysGraphics* sys_graphics)
     for(int i = 0; i < decl_num; i++)
     {
         sprintf(path, "%s%s", path_info->GetPath(PATH_TYPE_SHADER), shader_file[i]);
-        if(LW_FAILED(shader_mgr->RegisterVertexShader(shader_type[i], path, VS_FILE_ASM)))
+#if defined(LW_USE_VS30)
+        const DWORD slot_flag = file_flag[i];
+#else
+        const DWORD slot_flag = VS_FILE_ASM;
+#endif
+        if(LW_FAILED(shader_mgr->RegisterVertexShader(shader_type[i], path, slot_flag)))
             return false;
 
 		if (i < 4) {

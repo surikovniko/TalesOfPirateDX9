@@ -284,6 +284,48 @@ LW_RESULT lwShaderMgr9::Init(DWORD vs_buf_size, DWORD decl_buf_size, DWORD ps_bu
     return LW_RET_OK;
 }
 
+static void ReportHlslCompileError(const char* file, ID3DXBuffer* buf_error)
+{
+    const char* path = file ? file : "(null)";
+    const char* err = "(no error buffer)";
+    if(buf_error && buf_error->GetBufferPointer())
+        err = (const char*)buf_error->GetBufferPointer();
+
+    OutputDebugStringA("D3DXCompileShader failed: ");
+    OutputDebugStringA(path);
+    OutputDebugStringA("\n");
+    OutputDebugStringA(err);
+    OutputDebugStringA("\n");
+
+    // LG formats with printf. Escape '%' and cap the payload: the logger writes into a fixed 8KB buffer.
+    const size_t kLogMax = 4000;
+    size_t err_len = strlen(err);
+    size_t copy_len = err_len > kLogMax ? kLogMax : err_len;
+    size_t pct = 0;
+    for(size_t i = 0; i < copy_len; ++i)
+    {
+        if(err[i] == '%')
+            ++pct;
+    }
+
+    char* escaped = LW_NEW(char[copy_len + pct + 1]);
+    size_t w = 0;
+    for(size_t i = 0; i < copy_len; ++i)
+    {
+        escaped[w++] = err[i];
+        if(err[i] == '%')
+            escaped[w++] = '%';
+    }
+    escaped[w] = 0;
+    LG("error", "D3DXCompileShader failed: %s\n%s\n", path, escaped);
+    LW_DELETE_A(escaped);
+
+    char title[MAX_PATH + 64];
+    _snprintf(title, sizeof(title) - 1, "D3DXCompileShader failed: %s", path);
+    title[sizeof(title) - 1] = 0;
+    MessageBox(NULL, err, title, MB_OK);
+}
+
 LW_RESULT lwShaderMgr9::RegisterVertexShader(DWORD type, BYTE* data, DWORD size)
 {
     LW_RESULT ret = LW_RET_FAILED;
@@ -369,18 +411,20 @@ LW_RESULT lwShaderMgr9::RegisterVertexShader(DWORD type, const char* file, DWORD
         }
         else if(file_flag == VS_FILE_HLSL)
         {
+            const D3DXMACRO* macros = (defines && defines->Name) ? defines : NULL;
 
             if(FAILED(D3DXCompileShaderFromFile(
                 file,
-                NULL,
+                macros,
                 NULL,
                 "main",
-                "vs_1_1",
+                "vs_3_0",
                 compile_flag,
                 &buf_code,
                 &buf_error,
                 NULL)))
             {
+                ReportHlslCompileError(file, buf_error);
                 goto __ret;
             }
 
@@ -395,19 +439,20 @@ LW_RESULT lwShaderMgr9::RegisterVertexShader(DWORD type, const char* file, DWORD
         else if(file_flag == VS_FILE_HLSL)
         {
             DWORD compile_flag = 0;
-			D3DXMACRO macro = {defines->Name, defines->Definition};
+            const D3DXMACRO* macros = (defines && defines->Name) ? defines : NULL;
             if(FAILED(D3DXCompileShader(
                 (LPCSTR)data, 
                 size, 
-                &macro, 
+                macros, 
                 NULL, 
                 "main",
-                "vs_2_0",
+                "vs_3_0",
                 compile_flag,
                 &buf_code,
                 &buf_error,
                 NULL)))
             {
+                ReportHlslCompileError(file, buf_error);
                 goto __ret;
             }
         }

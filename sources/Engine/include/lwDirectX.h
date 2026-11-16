@@ -16,6 +16,7 @@
 
 #if (defined LW_USE_DX9)
 
+//#define LW_USE_VS30
 //#define LW_SHADER_DEBUG_VS
 
 #include <d3d9.h>
