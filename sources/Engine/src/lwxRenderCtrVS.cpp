@@ -2,6 +2,7 @@
 
 #include "stdafx.h"
 #include "lwxRenderCtrlVS.h"
+#include "lwResourceMgr.h"
 
 LW_BEGIN
 
@@ -163,10 +164,25 @@ LW_RESULT lwxRenderCtrlVSVertexBlend_dx8::BeginSet(lwIRenderCtrlAgent* agent)
                 if (bone_num == 0 || !rtmat)
                     goto __ret;
 
-                // buffer estático: 50 ossos * (3 registros * 4 floats) = 600 floats
+                {
+                    lwIMeshAgent* mesh_agent = agent->GetMeshAgent();
+                    lwMeshInfo* mesh_info = 0;
+                    if (mesh_agent && mesh_agent->GetMesh())
+                        mesh_info = mesh_agent->GetMesh()->GetMeshInfo();
+                    if (mesh_info && mesh_info->bone_bucket_num > 0)
+                        break;
+                }
+
+#if defined(LW_USE_VS30)
+                // 78 bones * 3 rows. A longer mesh is split into buckets and uploaded there.
+                static float __this_buf[LW_VS30_BONE_PALETTE * 12];
+                if (bone_num > LW_VS30_BONE_PALETTE)
+                    bone_num = LW_VS30_BONE_PALETTE;
+#else
                 static float __this_buf[50 * 12];
                 if (bone_num > 50)
-                    bone_num = 50; // evita overflow, mantido simples
+                    bone_num = 50;
+#endif
 
                 DWORD bi;
                 for (bi = 0; bi < bone_num; ++bi)
@@ -361,6 +377,97 @@ LW_RESULT lwxRenderCtrlVSVertexBlend_dx8::BeginSetSubset(DWORD subset, lwIRender
 }
 LW_RESULT lwxRenderCtrlVSVertexBlend_dx8::EndSetSubset(DWORD subset, lwIRenderCtrlAgent* agent)
 {
+    return LW_RET_OK;
+}
+
+LW_RESULT lwxRenderCtrlVSVertexBlend_dx8::DrawBoneBuckets(DWORD subset, lwIRenderCtrlAgent* agent)
+{
+    lwIMeshAgent* mesh_agent;
+    lwMesh* mesh;
+    lwMeshInfo* info;
+    lwIDeviceObject* dev_obj;
+    lwIAnimCtrlAgent* anim_agent;
+    const lwMatrix44* rtm = 0;
+    DWORD rtm_num = 0;
+    DWORD animobj_num;
+    DWORD i;
+    lwMatrix44 ident;
+
+    if (!agent || !agent->GetResourceMgr())
+        return LW_RET_FAILED;
+
+    mesh_agent = agent->GetMeshAgent();
+    if (!mesh_agent || !mesh_agent->GetMesh())
+        return LW_RET_OK_1;
+
+    mesh = (lwMesh*)mesh_agent->GetMesh();
+    info = mesh->GetMeshInfo();
+    if (!info || info->bone_bucket_num == 0 || info->bone_bucket_seq == 0)
+        return LW_RET_OK_1;
+
+    dev_obj = agent->GetResourceMgr()->GetDeviceObject();
+    anim_agent = agent->GetAnimCtrlAgent();
+    if (!dev_obj || !anim_agent)
+        return LW_RET_FAILED;
+
+    animobj_num = anim_agent->GetAnimCtrlObjNum();
+    for (i = 0; i < animobj_num; i++)
+    {
+        lwIAnimCtrlObj* animctrl_obj = anim_agent->GetAnimCtrlObj(i);
+        lwAnimCtrlObjTypeInfo type_info;
+        if (!animctrl_obj)
+            continue;
+
+        animctrl_obj->GetTypeInfo(&type_info);
+        if (type_info.type != ANIM_CTRL_TYPE_BONE)
+            continue;
+
+        lwIAnimCtrlObjBone* bone_ctrl = (lwIAnimCtrlObjBone*)animctrl_obj;
+        rtm_num = bone_ctrl->GetBoneRTTMNum();
+        rtm = bone_ctrl->GetBoneRTMSeq();
+        break;
+    }
+
+    if (rtm == 0 || rtm_num == 0)
+        return LW_RET_FAILED;
+
+    lwMatrix44Identity(&ident);
+
+    {
+        static float buf[LW_VS30_BONE_PALETTE * 12];
+
+        for (i = 0; i < info->bone_bucket_num; i++)
+        {
+            lwMeshBoneBucket* bucket = &info->bone_bucket_seq[i];
+            const lwSubsetInfo* range;
+            DWORD bone_num;
+            DWORD bi;
+
+            if (bucket->subset_seq == 0 || subset >= bucket->subset_num)
+                continue;
+
+            range = &bucket->subset_seq[subset];
+            if (range->primitive_num == 0)
+                continue;
+
+            bone_num = bucket->bone_num;
+            if (bone_num > LW_VS30_BONE_PALETTE)
+                bone_num = LW_VS30_BONE_PALETTE;
+
+            for (bi = 0; bi < bone_num; bi++)
+            {
+                DWORD id = bucket->bone_index_seq ? bucket->bone_index_seq[bi] : 0;
+                const lwMatrix44* src = (id < rtm_num) ? &rtm[id] : &ident;
+                lwMatrix44Transpose((lwMatrix44*)&buf[bi * 12], src);
+            }
+
+            dev_obj->SetVertexShaderConstantF(VS_CONST_REG_MAT_PALETTE, buf, bone_num * 3);
+
+            if (LW_FAILED(mesh->DrawSubsetRange(range)))
+                return LW_RET_FAILED;
+        }
+    }
+
     return LW_RET_OK;
 }
 

@@ -15,7 +15,7 @@
 //   c5      — LightDirection
 //   c6      — Ambient
 //   c7      — Diffuse
-//   c21..   — BV[75] matrix palette (25 bones * 3 rows)
+//   c21..   — BV[234] matrix palette (78 bones * 3 rows, c21..c254)
 //
 // BLENDINDICES — D3DCOLOR, в шейдер приходит как float 0..1.
 // ASM читает v2.zyxw: первая кость — .z, затем .y, .x, .w.
@@ -30,7 +30,7 @@ float4x4 World : register(c1);
 float3 LightDirection : register(c5);
 float4 Ambient : register(c6);
 float4 Diffuse : register(c7);
-float4 BV[75] : register(c21);
+float4 BV[234] : register(c21); // LW_VS30_BONE_PALETTE * 3
 
 struct VS_IN {
     float4 pos : POSITION;

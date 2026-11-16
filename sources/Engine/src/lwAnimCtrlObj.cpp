@@ -287,7 +287,19 @@ LW_RESULT lwAnimCtrlObjBone::UpdateObject(lwIAnimCtrlObjBone* ctrl_obj, lwIMesh*
         {
             lwMeshInfo* mesh_info = mesh_obj->GetMeshInfo();
 
-            if (mesh_info->bone_index_num > 0 && bone_num > 0)
+            if (mesh_info->bone_bucket_num > 0 && bone_num > 0)
+            {
+                lwMatrix44* bone_rtm = _anim_ctrl->GetBoneRTMSeq();
+
+                if (o_ctrl_obj->_bone_rtm_num == 0)
+                {
+                    o_ctrl_obj->_bone_rtm_num = bone_num;
+                    o_ctrl_obj->_bone_rtm_seq = LW_NEW(lwMatrix44[o_ctrl_obj->_bone_rtm_num]);
+                }
+
+                memcpy(o_ctrl_obj->_bone_rtm_seq, bone_rtm, sizeof(lwMatrix44) * o_ctrl_obj->_bone_rtm_num);
+            }
+            else if (mesh_info->bone_index_num > 0 && bone_num > 0)
             {
                 lwMatrix44* bone_rtm = _anim_ctrl->GetBoneRTMSeq();
 

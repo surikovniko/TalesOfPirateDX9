@@ -56,6 +56,7 @@ public:
     LW_RESULT EndSet(lwIRenderCtrlAgent* agent);
     LW_RESULT BeginSetSubset(DWORD subset, lwIRenderCtrlAgent* agent);
     LW_RESULT EndSetSubset(DWORD subset, lwIRenderCtrlAgent* agent);
+    LW_RESULT DrawBoneBuckets(DWORD subset, lwIRenderCtrlAgent* agent);
 
 
 private:

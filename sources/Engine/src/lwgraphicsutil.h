@@ -111,6 +111,8 @@ LW_FRONT_API void lwFreeColorValue( lwColorValue4b* buf );
 LW_FRONT_API LW_RESULT lwLoadTexture( IDirect3DTextureX** tex, IDirect3DDeviceX* dev, const char* file, DWORD usage, D3DFORMAT fmt, D3DPOOL pool );
 LW_FRONT_API LW_RESULT lwLoadTexDataInfo(lwTexDataInfo* info, const char* file, DWORD format, DWORD colorkey_type, lwColorValue4b* colorkey, int use_power_size);
 LW_FRONT_API LW_RESULT lwLoadMeshDataInfo( lwMeshDataInfo* info, const lwMeshInfo* mi );
+// Splits a triangle-list mesh whose palette is longer than max_bones. No-op when it already fits.
+LW_FRONT_API LW_RESULT lwSplitMeshBoneBuckets(lwMeshInfo* info, DWORD max_bones);
 LW_FRONT_API DWORD lwGetTexFlexibleSize( DWORD size );
 
 LW_FRONT_API void lwScreenToWorld( lwVector3* org, lwVector3* ray, int x, int y, int width, int height, const lwMatrix44* mat_proj, const lwMatrix44* mat_view );

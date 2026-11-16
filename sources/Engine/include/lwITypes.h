@@ -12,6 +12,8 @@ LW_BEGIN
 #define LW_MAX_SUBSET_NUM                   16
 #define LW_MAX_BLENDWEIGHT_NUM              4
 #define LW_MAX_BONE_NUM                     25
+// One vs_3_0 draw, palette at c21: (256 - 21) / 3. LW_MAX_BONE_NUM stays the old file-struct size.
+#define LW_VS30_BONE_PALETTE                78
 #define LW_MAX_BONEDUMMY_NUM                64
 #define LW_MAX_MODEL_GEOM_OBJ_NUM           32
 #define LW_MAX_MODEL_OBJ_NUM                LW_MAX_MODEL_GEOM_OBJ_NUM + 1 // geometry_num + helper

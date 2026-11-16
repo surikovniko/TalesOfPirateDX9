@@ -1178,8 +1178,20 @@ LW_RESULT lwMesh::LoadSystemMemory(const lwMeshInfo* info)
     lwMeshDataInfo_Destruct(&_data_info);
     lwMeshDataInfo_Construct(&_data_info);
 
-    if(LW_FAILED(lwLoadMeshDataInfo(&_data_info, info)))
-        goto __ret;
+    {
+        const lwMeshInfo* vb_src = info;
+#if defined(LW_USE_VS30)
+        if (_mesh_info.bone_index_num > LW_VS30_BONE_PALETTE)
+        {
+            if (LW_FAILED(lwSplitMeshBoneBuckets(&_mesh_info, LW_VS30_BONE_PALETTE)))
+                goto __ret;
+            if (_mesh_info.bone_bucket_num > 0)
+                vb_src = &_mesh_info;
+        }
+#endif
+        if (LW_FAILED(lwLoadMeshDataInfo(&_data_info, vb_src)))
+            goto __ret;
+    }
 
     _rsa_0.Load(info->rs_set, LW_MESH_RS_NUM);
 
@@ -1542,9 +1554,20 @@ LW_RESULT lwMesh::EndSet()
 
 LW_RESULT lwMesh::DrawSubset(DWORD subset)
 {
+    if((_state & RES_STATE_VIDEOMEMORY) == 0)
+        return LW_RET_FAILED;
+
+    if(_mesh_info_ptr == 0 || _mesh_info_ptr->subset_seq == 0 || subset >= _mesh_info_ptr->subset_num)
+        return LW_RET_FAILED;
+
+    return DrawSubsetRange(&_mesh_info_ptr->subset_seq[subset]);
+}
+
+LW_RESULT lwMesh::DrawSubsetRange(const lwSubsetInfo* subset)
+{
     LW_RESULT ret = LW_RET_FAILED;
 
-    if((_state & RES_STATE_VIDEOMEMORY) == 0)
+    if((_state & RES_STATE_VIDEOMEMORY) == 0 || subset == 0)
         goto __ret;
 
     {
@@ -1552,7 +1575,7 @@ LW_RESULT lwMesh::DrawSubset(DWORD subset)
         lwIStaticStreamMgr* ssm;
         lwILockableStreamMgr* lsm;
 
-        lwSubsetInfo* i = &_mesh_info_ptr->subset_seq[subset];
+        const lwSubsetInfo* i = subset;
 
         DWORD start_index = 0;
         DWORD base_vert_index = 0;

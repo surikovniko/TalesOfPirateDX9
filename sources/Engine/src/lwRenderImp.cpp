@@ -157,6 +157,16 @@ LW_RESULT lwRenderCtrlAgent::DrawSubset(DWORD subset)
     if(_mesh_agent == NULL)
         goto __ret;
 
+    if (_render_ctrl)
+    {
+        LW_RESULT bucket_ret = _render_ctrl->DrawBoneBuckets(subset, this);
+        if (bucket_ret != LW_RET_OK_1)
+        {
+            ret = bucket_ret;
+            goto __ret;
+        }
+    }
+
     if(LW_FAILED(_mesh_agent->DrawSubset(subset)))
         goto __ret;
 

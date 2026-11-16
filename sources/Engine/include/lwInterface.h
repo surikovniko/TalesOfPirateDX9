@@ -1754,6 +1754,11 @@ public:
     virtual LW_RESULT EndSet(lwIRenderCtrlAgent* agent) PURE_METHOD;
     virtual LW_RESULT BeginSetSubset(DWORD subset, lwIRenderCtrlAgent* agent) PURE_METHOD;
     virtual LW_RESULT EndSetSubset(DWORD subset, lwIRenderCtrlAgent* agent) PURE_METHOD;
+    // LW_RET_OK_1: this controller has no bone buckets for the mesh. LW_RET_OK: buckets were drawn.
+    virtual LW_RESULT DrawBoneBuckets(DWORD subset, lwIRenderCtrlAgent* agent)
+    {
+        return LW_RET_OK_1;
+    }
 	virtual void setPixelShader( const std::string& filename )
 	{
 	}

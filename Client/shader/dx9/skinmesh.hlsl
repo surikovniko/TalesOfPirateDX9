@@ -19,7 +19,7 @@
 //   c7      — Diffuse
 //   c12..c15 — Texture   (TT_MODE = 1)
 //   c16..c19 — Texture2  (TT_MODE = 2 или 3)
-//   c21     — BV[75], 25 костей × 3 строки. Дальше палитру не расширять.
+//   c21     — BV[234], 78 костей × 3 строки (c21..c254). Дальше один draw не адресует.
 
 #ifndef NUM_SKIN_WEIGHTS
 #define NUM_SKIN_WEIGHTS 1
@@ -47,7 +47,7 @@ float4 Tex_Row2 : register(c18);
 float4 Tex_Row3 : register(c19);
 #endif
 
-float4 BV[75] : register(c21);
+float4 BV[234] : register(c21); // LW_VS30_BONE_PALETTE * 3
 
 struct VS_IN {
     float4 pos : POSITION;

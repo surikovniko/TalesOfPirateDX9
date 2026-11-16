@@ -433,6 +433,7 @@ public:
     LW_RESULT BeginSet();
     LW_RESULT EndSet();
     LW_RESULT DrawSubset( DWORD subset );
+    LW_RESULT DrawSubsetRange( const lwSubsetInfo* subset );
     LW_RESULT LoseDevice();
     LW_RESULT ResetDevice();
 

@@ -226,6 +226,17 @@ struct lwSubsetInfo
     DWORD min_index;
 };
 
+// One draw of a skinned mesh whose palette is longer than LW_VS30_BONE_PALETTE.
+// bone_index_seq[local_slot] is a skeleton bone id. Vertex blend indices in this
+// bucket are already renumbered to local slots.
+struct lwMeshBoneBucket
+{
+    DWORD bone_num;
+    DWORD* bone_index_seq;
+    lwSubsetInfo* subset_seq;
+    DWORD subset_num;
+};
+
 inline void lwSubsetInfo_Construct(lwSubsetInfo* obj, DWORD pri_num, DWORD start_index, DWORD vertex_num, DWORD min_index)
 {
     obj->primitive_num = pri_num;
@@ -378,15 +389,39 @@ struct lwMeshInfo
     lwSubsetInfo* subset_seq;
     D3DVERTEXELEMENTX* vertex_element_seq;
 
+    DWORD bone_bucket_num;
+    lwMeshBoneBucket* bone_bucket_seq;
+
 
     lwMeshInfo()
         : vertex_seq(0), normal_seq(0), vercol_seq(0), index_seq(0), 
         subset_seq(0), blend_seq(0), bone_index_seq(0),
         texcoord0_seq(0), texcoord1_seq(0), texcoord2_seq(0), texcoord3_seq(0),
         vertex_num(0), index_num(0), subset_num(0), bone_index_num(0), 
-        bone_infl_factor(0), vertex_element_seq(0), vertex_element_num(0)
+        bone_infl_factor(0), vertex_element_seq(0), vertex_element_num(0),
+        bone_bucket_num(0), bone_bucket_seq(0)
     {
         lwRenderStateAtom_Construct_A(rs_set, LW_MESH_RS_NUM);
+    }
+
+    void FreeBoneBuckets()
+    {
+        DWORD i;
+        if (bone_bucket_seq == 0)
+        {
+            bone_bucket_num = 0;
+            return;
+        }
+        for (i = 0; i < bone_bucket_num; i++)
+        {
+            LW_IF_DELETE_A(bone_bucket_seq[i].bone_index_seq);
+            bone_bucket_seq[i].bone_index_seq = 0;
+            LW_IF_DELETE_A(bone_bucket_seq[i].subset_seq);
+            bone_bucket_seq[i].subset_seq = 0;
+        }
+        LW_IF_DELETE_A(bone_bucket_seq);
+        bone_bucket_seq = 0;
+        bone_bucket_num = 0;
     }
 
     ~lwMeshInfo()
@@ -402,7 +437,8 @@ struct lwMeshInfo
         LW_IF_DELETE_A(blend_seq);        
         LW_IF_DELETE_A(bone_index_seq);        
         LW_IF_DELETE_A(subset_seq);        
-        LW_IF_DELETE_A(vertex_element_seq); 
+        LW_IF_DELETE_A(vertex_element_seq);
+        FreeBoneBuckets();
     }
 
     void ResetIndexBuffer(const DWORD* buf)
@@ -435,6 +471,8 @@ inline void lwMeshInfo_Construct(lwMeshInfo* obj)
     obj->bone_index_seq = 0;
     obj->vertex_element_seq = 0;
     obj->vertex_element_num = 0;
+    obj->bone_bucket_num = 0;
+    obj->bone_bucket_seq = 0;
     lwRenderStateAtom_Construct_A(obj->rs_set, LW_MESH_RS_NUM);
 }
 
@@ -448,7 +486,8 @@ inline void lwMeshInfo_Destruct(lwMeshInfo* obj)
     LW_IF_DELETE_A(obj->texcoord2_seq);
     LW_IF_DELETE_A(obj->texcoord3_seq);
     LW_IF_DELETE_A(obj->index_seq);
-    LW_IF_DELETE_A(obj->blend_seq);        
+    LW_IF_DELETE_A(obj->blend_seq);
+    obj->FreeBoneBuckets();
 }
 
 //enum lwMtlTexInfoTransparencyTypeEnum

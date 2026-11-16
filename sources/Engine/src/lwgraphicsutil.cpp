@@ -8,6 +8,8 @@
 #include "lwErrorCode.h"
 #include "lwD3D.h"
 
+#include <vector>
+
 
 
 LW_BEGIN
@@ -821,6 +823,382 @@ LW_RESULT lwExtractMeshData(lwMeshInfo* info, void* vb_data, void* ib_data, DWOR
     ret = LW_RET_OK;
 __ret:
     return ret;
+}
+
+static DWORD lwMeshBlendInfluenceCount(const lwMeshInfo* info)
+{
+    if (info->bone_infl_factor >= 1 && info->bone_infl_factor <= 4)
+        return info->bone_infl_factor;
+
+    DWORD pos = info->fvf & D3DFVF_POSITION_MASK;
+    if (pos == D3DFVF_XYZB2)
+        return 2;
+    if (pos == D3DFVF_XYZB3)
+        return 3;
+    if (pos == D3DFVF_XYZB4 || pos == D3DFVF_XYZB5)
+        return 4;
+    return 1;
+}
+
+static int lwFindBoneSlot(const std::vector<DWORD>& bones, DWORD skel)
+{
+    DWORD i;
+    for (i = 0; i < bones.size(); i++)
+    {
+        if (bones[i] == skel)
+            return (int)i;
+    }
+    return -1;
+}
+
+static DWORD lwCollectVertexBones(const lwMeshInfo* info, DWORD vert, DWORD infl, DWORD* out_bones, DWORD out_max)
+{
+    DWORD n = 0;
+    DWORD k;
+    if (vert >= info->vertex_num || info->blend_seq == 0)
+        return 0;
+
+    for (k = 0; k < infl && n < out_max; k++)
+    {
+        DWORD slot = info->blend_seq[vert].index[k];
+        DWORD skel;
+        DWORD already;
+        DWORD j;
+        if (slot >= info->bone_index_num)
+            continue;
+        skel = info->bone_index_seq[slot];
+        already = 0;
+        for (j = 0; j < n; j++)
+        {
+            if (out_bones[j] == skel)
+            {
+                already = 1;
+                break;
+            }
+        }
+        if (!already)
+            out_bones[n++] = skel;
+    }
+    return n;
+}
+
+struct lwBoneBucketBuild
+{
+    std::vector<DWORD> bones;
+    std::vector<int> old_to_new;
+    std::vector<DWORD> src_vert;
+    std::vector<std::vector<DWORD> > subset_idx;
+};
+
+static lwBoneBucketBuild lwMakeBoneBucket(DWORD vert_num, DWORD subset_num)
+{
+    lwBoneBucketBuild b;
+    b.old_to_new.assign(vert_num, -1);
+    b.subset_idx.resize(subset_num);
+    return b;
+}
+
+static DWORD lwBucketExtraBones(const lwBoneBucketBuild& bucket, const DWORD* bones, DWORD bone_n)
+{
+    DWORD extra = 0;
+    DWORD i;
+    for (i = 0; i < bone_n; i++)
+    {
+        if (lwFindBoneSlot(bucket.bones, bones[i]) < 0)
+            extra++;
+    }
+    return extra;
+}
+
+LW_RESULT lwSplitMeshBoneBuckets(lwMeshInfo* info, DWORD max_bones)
+{
+    DWORD infl;
+    DWORD s;
+    DWORD face;
+    DWORD vert_total;
+    DWORD index_total;
+    DWORD bi;
+    DWORD vi;
+    DWORD ii;
+    DWORD base_vert;
+    DWORD index_cursor;
+    std::vector<lwBoneBucketBuild> buckets;
+    lwVector3* new_pos = 0;
+    lwVector3* new_nrm = 0;
+    DWORD* new_col = 0;
+    lwVector2* new_uv0 = 0;
+    lwVector2* new_uv1 = 0;
+    lwVector2* new_uv2 = 0;
+    lwVector2* new_uv3 = 0;
+    lwBlendInfo* new_blend = 0;
+    DWORD* new_index = 0;
+    lwMeshBoneBucket* new_buckets = 0;
+
+    if (info == 0 || max_bones == 0 || max_bones > 255)
+        return LW_RET_FAILED;
+
+    if (info->bone_bucket_num > 0)
+        return LW_RET_OK;
+
+    if (info->bone_index_num <= max_bones)
+        return LW_RET_OK;
+
+    if (info->pt_type != D3DPT_TRIANGLELIST
+        || info->blend_seq == 0
+        || info->bone_index_seq == 0
+        || info->index_seq == 0
+        || info->subset_seq == 0
+        || info->subset_num == 0
+        || info->vertex_seq == 0
+        || info->vertex_num == 0
+        || info->index_num < 3)
+    {
+        return LW_RET_OK;
+    }
+
+    infl = lwMeshBlendInfluenceCount(info);
+    buckets.push_back(lwMakeBoneBucket(info->vertex_num, info->subset_num));
+
+    for (s = 0; s < info->subset_num; s++)
+    {
+        DWORD start = info->subset_seq[s].start_index;
+        DWORD prim = info->subset_seq[s].primitive_num;
+        DWORD index_end = start + prim * 3;
+        if (start >= info->index_num)
+            continue;
+        if (index_end > info->index_num)
+            index_end = info->index_num - ((info->index_num - start) % 3);
+
+        for (face = start; face + 2 < index_end; face += 3)
+        {
+            DWORD v[3];
+            DWORD face_bones[12];
+            DWORD face_bone_n = 0;
+            DWORD corner;
+            DWORD cur;
+            int fit;
+
+            v[0] = info->index_seq[face];
+            v[1] = info->index_seq[face + 1];
+            v[2] = info->index_seq[face + 2];
+            if (v[0] >= info->vertex_num || v[1] >= info->vertex_num || v[2] >= info->vertex_num)
+                continue;
+
+            for (corner = 0; corner < 3; corner++)
+            {
+                DWORD tmp[4];
+                DWORD tn = lwCollectVertexBones(info, v[corner], infl, tmp, 4);
+                DWORD t;
+                for (t = 0; t < tn && face_bone_n < 12; t++)
+                {
+                    DWORD j;
+                    DWORD seen = 0;
+                    for (j = 0; j < face_bone_n; j++)
+                    {
+                        if (face_bones[j] == tmp[t])
+                        {
+                            seen = 1;
+                            break;
+                        }
+                    }
+                    if (!seen)
+                        face_bones[face_bone_n++] = tmp[t];
+                }
+            }
+
+            cur = (DWORD)buckets.size() - 1;
+            fit = (lwBucketExtraBones(buckets[cur], face_bones, face_bone_n) + buckets[cur].bones.size()) <= max_bones;
+            if (!fit && !buckets[cur].src_vert.empty())
+            {
+                buckets.push_back(lwMakeBoneBucket(info->vertex_num, info->subset_num));
+                cur = (DWORD)buckets.size() - 1;
+            }
+
+            for (corner = 0; corner < (DWORD)face_bone_n; corner++)
+            {
+                if (lwFindBoneSlot(buckets[cur].bones, face_bones[corner]) < 0)
+                    buckets[cur].bones.push_back(face_bones[corner]);
+            }
+
+            for (corner = 0; corner < 3; corner++)
+            {
+                int mapped = buckets[cur].old_to_new[v[corner]];
+                if (mapped < 0)
+                {
+                    mapped = (int)buckets[cur].src_vert.size();
+                    buckets[cur].old_to_new[v[corner]] = mapped;
+                    buckets[cur].src_vert.push_back(v[corner]);
+                }
+                buckets[cur].subset_idx[s].push_back((DWORD)mapped);
+            }
+        }
+    }
+
+    vert_total = 0;
+    index_total = 0;
+    for (bi = 0; bi < buckets.size(); bi++)
+    {
+        vert_total += (DWORD)buckets[bi].src_vert.size();
+        for (s = 0; s < info->subset_num; s++)
+            index_total += (DWORD)buckets[bi].subset_idx[s].size();
+    }
+
+    if (vert_total == 0 || index_total < 3 || vert_total > 65535)
+        return LW_RET_OK;
+
+    new_pos = LW_NEW(lwVector3[vert_total]);
+    new_blend = LW_NEW(lwBlendInfo[vert_total]);
+    new_index = LW_NEW(DWORD[index_total]);
+    new_buckets = LW_NEW(lwMeshBoneBucket[buckets.size()]);
+    memset(new_buckets, 0, sizeof(lwMeshBoneBucket) * buckets.size());
+
+    if (info->normal_seq)
+        new_nrm = LW_NEW(lwVector3[vert_total]);
+    if (info->vercol_seq)
+        new_col = LW_NEW(DWORD[vert_total]);
+    if (info->texcoord0_seq)
+        new_uv0 = LW_NEW(lwVector2[vert_total]);
+    if (info->texcoord1_seq)
+        new_uv1 = LW_NEW(lwVector2[vert_total]);
+    if (info->texcoord2_seq)
+        new_uv2 = LW_NEW(lwVector2[vert_total]);
+    if (info->texcoord3_seq)
+        new_uv3 = LW_NEW(lwVector2[vert_total]);
+
+    if (new_pos == 0 || new_blend == 0 || new_index == 0 || new_buckets == 0)
+        goto __fail;
+
+    base_vert = 0;
+    index_cursor = 0;
+    for (bi = 0; bi < buckets.size(); bi++)
+    {
+        lwBoneBucketBuild& bucket = buckets[bi];
+        lwMeshBoneBucket& out = new_buckets[bi];
+
+        out.bone_num = (DWORD)bucket.bones.size();
+        out.subset_num = info->subset_num;
+        if (out.bone_num > 0)
+        {
+            out.bone_index_seq = LW_NEW(DWORD[out.bone_num]);
+            if (out.bone_index_seq == 0)
+                goto __fail;
+            for (vi = 0; vi < out.bone_num; vi++)
+                out.bone_index_seq[vi] = bucket.bones[vi];
+        }
+        out.subset_seq = LW_NEW(lwSubsetInfo[out.subset_num]);
+        if (out.subset_seq == 0)
+            goto __fail;
+        memset(out.subset_seq, 0, sizeof(lwSubsetInfo) * out.subset_num);
+
+        for (vi = 0; vi < bucket.src_vert.size(); vi++)
+        {
+            DWORD src_i = bucket.src_vert[vi];
+            DWORD dst_i = base_vert + vi;
+            DWORD k;
+            new_pos[dst_i] = info->vertex_seq[src_i];
+            if (new_nrm)
+                new_nrm[dst_i] = info->normal_seq[src_i];
+            if (new_col)
+                new_col[dst_i] = info->vercol_seq[src_i];
+            if (new_uv0)
+                new_uv0[dst_i] = info->texcoord0_seq[src_i];
+            if (new_uv1)
+                new_uv1[dst_i] = info->texcoord1_seq[src_i];
+            if (new_uv2)
+                new_uv2[dst_i] = info->texcoord2_seq[src_i];
+            if (new_uv3)
+                new_uv3[dst_i] = info->texcoord3_seq[src_i];
+
+            new_blend[dst_i] = info->blend_seq[src_i];
+            for (k = 0; k < infl; k++)
+            {
+                DWORD slot = info->blend_seq[src_i].index[k];
+                int local;
+                if (slot >= info->bone_index_num)
+                    continue;
+                local = lwFindBoneSlot(bucket.bones, info->bone_index_seq[slot]);
+                if (local >= 0)
+                    new_blend[dst_i].index[k] = (BYTE)local;
+            }
+        }
+
+        for (s = 0; s < info->subset_num; s++)
+        {
+            DWORD count = (DWORD)bucket.subset_idx[s].size();
+            DWORD min_i = 0;
+            DWORD max_i = 0;
+            out.subset_seq[s].start_index = index_cursor;
+            out.subset_seq[s].primitive_num = count / 3;
+            for (ii = 0; ii < count; ii++)
+            {
+                DWORD gi = bucket.subset_idx[s][ii] + base_vert;
+                new_index[index_cursor++] = gi;
+                if (ii == 0 || gi < min_i)
+                    min_i = gi;
+                if (ii == 0 || gi > max_i)
+                    max_i = gi;
+            }
+            if (count == 0)
+            {
+                out.subset_seq[s].min_index = 0;
+                out.subset_seq[s].vertex_num = 0;
+            }
+            else
+            {
+                out.subset_seq[s].min_index = min_i;
+                out.subset_seq[s].vertex_num = max_i - min_i + 1;
+            }
+        }
+
+        base_vert += (DWORD)bucket.src_vert.size();
+    }
+
+    LW_IF_DELETE_A(info->vertex_seq);
+    LW_IF_DELETE_A(info->normal_seq);
+    LW_IF_DELETE_A(info->vercol_seq);
+    LW_IF_DELETE_A(info->texcoord0_seq);
+    LW_IF_DELETE_A(info->texcoord1_seq);
+    LW_IF_DELETE_A(info->texcoord2_seq);
+    LW_IF_DELETE_A(info->texcoord3_seq);
+    LW_IF_DELETE_A(info->blend_seq);
+    LW_IF_DELETE_A(info->index_seq);
+
+    info->vertex_seq = new_pos;
+    info->normal_seq = new_nrm;
+    info->vercol_seq = new_col;
+    info->texcoord0_seq = new_uv0;
+    info->texcoord1_seq = new_uv1;
+    info->texcoord2_seq = new_uv2;
+    info->texcoord3_seq = new_uv3;
+    info->blend_seq = new_blend;
+    info->index_seq = new_index;
+    info->vertex_num = vert_total;
+    info->index_num = index_total;
+    info->bone_bucket_seq = new_buckets;
+    info->bone_bucket_num = (DWORD)buckets.size();
+    return LW_RET_OK;
+
+__fail:
+    LW_IF_DELETE_A(new_pos);
+    LW_IF_DELETE_A(new_nrm);
+    LW_IF_DELETE_A(new_col);
+    LW_IF_DELETE_A(new_uv0);
+    LW_IF_DELETE_A(new_uv1);
+    LW_IF_DELETE_A(new_uv2);
+    LW_IF_DELETE_A(new_uv3);
+    LW_IF_DELETE_A(new_blend);
+    LW_IF_DELETE_A(new_index);
+    if (new_buckets)
+    {
+        DWORD n;
+        for (n = 0; n < buckets.size(); n++)
+        {
+            LW_IF_DELETE_A(new_buckets[n].bone_index_seq);
+            LW_IF_DELETE_A(new_buckets[n].subset_seq);
+        }
+        LW_IF_DELETE_A(new_buckets);
+    }
+    return LW_RET_FAILED;
 }
 
 LW_RESULT lwLoadMeshDataInfo(lwMeshDataInfo* info, const lwMeshInfo* mi)
